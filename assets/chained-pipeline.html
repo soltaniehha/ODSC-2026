@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Chained Pipeline — Cycle Diagram</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     CHAINED PIPELINE — CIRCULAR CYCLE
+     User → STT → LLM → TTS → User (clockwise).
+     The traveling payload morphs to match each segment:
+       User → STT : voice waveform
+       STT  → LLM : text characters
+       LLM  → TTS : text characters
+       TTS  → User: voice waveform
+     A short three-turn dialogue rotates above the diagram.
+     ============================================================ */
+
+  .cp-cycle {
+    --cp-ink: #0a0a0e;
+    --cp-dim: #5a5a62;
+    --cp-rule: #d4d2cd;
+    --cp-panel: #f0eee7;
+    --cp-terracotta: #a8410e;
+    --cp-navy: #1a4d8c;
+    --cp-teal: #0f4c5c;
+
+    width: 100%;
+    box-sizing: border-box;
+    color: var(--cp-ink);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    padding: 24px 8px;
+  }
+  .cp-cycle *,
+  .cp-cycle *::before,
+  .cp-cycle *::after { box-sizing: border-box; }
+
+  .cp-stage {
+    position: relative;
+    width: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    aspect-ratio: 1 / 1;
+  }
+  .cp-stage svg.cp-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  /* SVG primitives -------------------------------------------------- */
+  .cp-svg .ring          { fill: none; stroke: var(--cp-rule); stroke-width: 1; }
+  .cp-svg .node-circle   { fill: var(--cp-panel); stroke: var(--cp-ink); stroke-width: 1.2; }
+  .cp-svg .payload-wave  { stroke: var(--cp-terracotta); stroke-width: 2.2; stroke-linecap: round; fill: none; }
+  .cp-svg .payload-char  { font-family: "JetBrains Mono", monospace; font-size: 18px; fill: var(--cp-terracotta); font-weight: 600; }
+
+  /* Node label blocks ----------------------------------------------- */
+  .cp-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    width: 160px;
+    pointer-events: none;
+  }
+  .cp-node .cp-role {
+    font-family: "Archivo Black", sans-serif;
+    font-size: 26px;
+    line-height: 1.05;
+    letter-spacing: 0.04em;
+    color: var(--cp-ink);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .cp-node .cp-caption {
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--cp-navy);
+  }
+  .cp-node .cp-sub-tool {
+    margin-top: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    color: var(--cp-teal);
+  }
+
+  /* Center caption: "each hop adds latency" — big */
+  .cp-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    width: 280px;
+    pointer-events: none;
+  }
+  .cp-center .val {
+    font-family: "Archivo Black", sans-serif;
+    font-size: 26px;
+    line-height: 1.1;
+    color: var(--cp-ink);
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+  }
+
+  /* Dialogue ribbon hidden — dialogue text travels along the ring instead */
+  .cp-dialogue { display: none; }
+</style>
+</head>
+<body style="margin:0; background:#fafaf6;">
+
+<!-- =========================================================
+     PASTE THIS BLOCK INTO YOUR SLIDE.
+     Self-contained: own <style> + <script>, scoped to .cp-cycle.
+     ========================================================= -->
+<div class="cp-cycle" id="cp-cycle">
+
+  <!-- Dialogue ribbon: three short turns rotate continuously -->
+  <div class="cp-dialogue" data-cp-dialogue>
+    <div class="cp-bubble cp-user"  data-cp-bubble="user">
+      <span class="cp-who">You</span><span data-cp-text></span>
+    </div>
+    <div class="cp-bubble cp-agent" data-cp-bubble="agent">
+      <span class="cp-who">Agent</span><span data-cp-text></span>
+    </div>
+  </div>
+
+  <div class="cp-stage" data-cp-stage>
+    <svg class="cp-svg" data-cp-svg viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet">
+
+      <!-- thin guide ring connecting all four nodes -->
+      <circle class="ring" cx="500" cy="500" r="280"/>
+
+      <!-- node wells & glyphs (built by JS) -->
+      <g data-cp-node-wells></g>
+      <g data-cp-node-glyphs></g>
+
+      <!-- traveling payload (group; contents swap per segment) -->
+      <g data-cp-payload></g>
+    </svg>
+
+    <!-- HTML node labels positioned over the SVG by JS -->
+    <div class="cp-node" data-cp-label="user">
+      <div class="cp-role">User</div>
+      <div class="cp-caption">speaker</div>
+    </div>
+    <div class="cp-node" data-cp-label="stt">
+      <div class="cp-role">STT</div>
+      <div class="cp-caption">transcribe</div>
+    </div>
+    <div class="cp-node" data-cp-label="llm">
+      <div class="cp-role">LLM</div>
+      <div class="cp-caption">reason</div>
+      <div class="cp-sub-tool">+ tool calls</div>
+    </div>
+    <div class="cp-node" data-cp-label="tts">
+      <div class="cp-role">TTS</div>
+      <div class="cp-caption">synthesize</div>
+    </div>
+
+    <!-- Big center caption -->
+    <div class="cp-center">
+      <div class="val">Each&nbsp;hop<br/>adds&nbsp;latency</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  const NS = 'http://www.w3.org/2000/svg';
+
+  /* ---- Layout ---- */
+  const CX = 500, CY = 500;
+  const R  = 280;
+  const NODE_R = 58;
+  const VBOX = 1000;
+  const LABEL_OFFSET = 130;
+
+  // angles measured CW from +x axis (SVG y-down); 270° is top.
+  const NODES = [
+    { id: 'user', angle: 180 },
+    { id: 'stt',  angle: 270 },
+    { id: 'llm',  angle:   0 },
+    { id: 'tts',  angle:  90 },
+  ];
+
+  const root  = document.getElementById('cp-cycle');
+  const stage = root.querySelector('[data-cp-stage]');
+  const svg   = root.querySelector('[data-cp-svg]');
+
+  function pt(angleDeg, radius) {
+    const a = angleDeg * Math.PI / 180;
+    return { x: CX + Math.cos(a) * radius, y: CY + Math.sin(a) * radius };
+  }
+
+  /* ---- Build node wells + glyphs ---- */
+  const wellsLayer  = svg.querySelector('[data-cp-node-wells]');
+  const glyphsLayer = svg.querySelector('[data-cp-node-glyphs]');
+
+  NODES.forEach(function (n) {
+    const c = pt(n.angle, R);
+    const circle = document.createElementNS(NS, 'circle');
+    circle.setAttribute('cx', c.x);
+    circle.setAttribute('cy', c.y);
+    circle.setAttribute('r', NODE_R);
+    circle.setAttribute('class', 'node-circle');
+    wellsLayer.appendChild(circle);
+
+    const g = document.createElementNS(NS, 'g');
+    g.setAttribute('transform', 'translate(' + c.x + ',' + c.y + ')');
+    g.setAttribute('fill', 'none');
+    g.setAttribute('stroke', '#0a0a0e');
+    g.setAttribute('stroke-width', '1.4');
+    g.setAttribute('stroke-linecap', 'round');
+    g.innerHTML = glyphFor(n.id);
+    glyphsLayer.appendChild(g);
+  });
+
+  function glyphFor(id) {
+    switch (id) {
+      case 'user':
+        return ''
+          + '<rect x="-8" y="-22" width="16" height="28" rx="8"/>'
+          + '<path d="M-18 4 Q-18 20 0 20 Q18 20 18 4"/>'
+          + '<line x1="0" y1="20" x2="0" y2="30"/>'
+          + '<line x1="-9" y1="30" x2="9" y2="30"/>';
+      case 'stt':
+        return ''
+          + '<line x1="-26" y1="-6" x2="-26" y2="6"/>'
+          + '<line x1="-20" y1="-12" x2="-20" y2="12"/>'
+          + '<line x1="-14" y1="-8" x2="-14" y2="8"/>'
+          + '<line x1="-8"  y1="-16" x2="-8"  y2="16"/>'
+          + '<line x1="-2"  y1="-10" x2="-2"  y2="10"/>'
+          + '<path d="M6 0 L20 0" stroke-dasharray="2 2"/>'
+          + '<path d="M22 -6 L28 0 L22 6"/>';
+      case 'llm':
+        return ''
+          + '<line x1="0" y1="0" x2="0" y2="-26"/>'
+          + '<line x1="0" y1="0" x2="22" y2="-15"/>'
+          + '<line x1="0" y1="0" x2="26" y2="8"/>'
+          + '<line x1="0" y1="0" x2="14" y2="26"/>'
+          + '<line x1="0" y1="0" x2="-14" y2="26"/>'
+          + '<line x1="0" y1="0" x2="-26" y2="8"/>'
+          + '<line x1="0" y1="0" x2="-22" y2="-15"/>'
+          + '<circle cx="0" cy="-26" r="4" fill="#f0eee7"/>'
+          + '<circle cx="22" cy="-15" r="4" fill="#f0eee7"/>'
+          + '<circle cx="26" cy="8"   r="4" fill="#f0eee7"/>'
+          + '<circle cx="14" cy="26"  r="4" fill="#f0eee7"/>'
+          + '<circle cx="-14" cy="26" r="4" fill="#f0eee7"/>'
+          + '<circle cx="-26" cy="8"  r="4" fill="#f0eee7"/>'
+          + '<circle cx="-22" cy="-15" r="4" fill="#f0eee7"/>'
+          + '<circle cx="0" cy="0" r="7" fill="#0a0a0e" stroke="#0a0a0e"/>';
+      case 'tts':
+        return ''
+          + '<path d="M-28 -6 L-22 0 L-28 6"/>'
+          + '<path d="M-20 0 L-6 0" stroke-dasharray="2 2"/>'
+          + '<line x1="0"  y1="-10" x2="0"  y2="10"/>'
+          + '<line x1="6"  y1="-16" x2="6"  y2="16"/>'
+          + '<line x1="12" y1="-8"  x2="12" y2="8"/>'
+          + '<line x1="18" y1="-12" x2="18" y2="12"/>'
+          + '<line x1="24" y1="-6"  x2="24" y2="6"/>';
+      default: return '';
+    }
+  }
+
+  /* ---- Direction arrows on the ring ---- (removed) */
+
+  /* ---- Position HTML labels ---- */
+  function placeLabels() {
+    const rect = stage.getBoundingClientRect();
+    const sx = rect.width  / VBOX;
+    const sy = rect.height / VBOX;
+    NODES.forEach(function (n) {
+      const out = pt(n.angle, R + NODE_R + LABEL_OFFSET);
+      const el = stage.querySelector('[data-cp-label="' + n.id + '"]');
+      if (!el) return;
+      el.style.left = (out.x * sx) + 'px';
+      el.style.top  = (out.y * sy) + 'px';
+    });
+  }
+  placeLabels();
+  window.addEventListener('resize', placeLabels);
+  if ('ResizeObserver' in window) new ResizeObserver(placeLabels).observe(stage);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(placeLabels);
+
+  /* ---- Payload rendering per segment ----
+     The payload is a <g> we transform along the arc. Its CONTENTS
+     differ per segment so the viewer sees:
+       voice → text → text → voice
+  --------------------------------------------------------------- */
+  const payload = svg.querySelector('[data-cp-payload]');
+
+  // Each segment (User→STT, STT→LLM, LLM→TTS, TTS→User) has a "kind".
+  // 'wave' = audio waveform; 'text' = words traveling. Text contents are
+  // pulled from the active TURN at runtime so they read as real dialogue.
+  const SEGMENTS = [
+    { kind: 'wave', source: 'user'  },  // User → STT  (audio in)
+    { kind: 'text', source: 'user'  },  // STT  → LLM  (transcript)
+    { kind: 'text', source: 'agent' },  // LLM  → TTS  (response text)
+    { kind: 'wave', source: 'agent' },  // TTS  → User (audio out)
+  ];
+
+  function clearPayload() {
+    while (payload.firstChild) payload.removeChild(payload.firstChild);
+  }
+
+  // Render the appropriate payload contents for a segment index.
+  // Wave is drawn around origin (0,0); we'll translate+rotate the group.
+  function renderPayload(segIdx, dialogueTurn) {
+    clearPayload();
+    const seg = SEGMENTS[segIdx];
+
+    if (seg.kind === 'wave') {
+      // A small voice waveform: 7 vertical bars with varying heights
+      const bars = [6, 12, 18, 22, 16, 10, 5];
+      const spacing = 6;
+      const startX = -((bars.length - 1) * spacing) / 2;
+      bars.forEach(function (h, i) {
+        const ln = document.createElementNS(NS, 'line');
+        ln.setAttribute('x1', startX + i * spacing);
+        ln.setAttribute('y1', -h);
+        ln.setAttribute('x2', startX + i * spacing);
+        ln.setAttribute('y2',  h);
+        ln.setAttribute('stroke', '#a8410e');
+        ln.setAttribute('stroke-width', '2.4');
+        ln.setAttribute('stroke-linecap', 'round');
+        ln.setAttribute('data-bar', i);
+        payload.appendChild(ln);
+      });
+    } else if (seg.kind === 'text') {
+      // Pull the actual phrase from the active turn so viewers can read it.
+      // segIdx 1 = STT→LLM (user transcript). segIdx 2 = LLM→TTS (agent reply).
+      const phrase = (segIdx === 1 ? dialogueTurn.user : dialogueTurn.agent) || '';
+      const chars = phrase;
+      const t = document.createElementNS(NS, 'text');
+      t.setAttribute('class', 'payload-char');
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('dominant-baseline', 'middle');
+      t.setAttribute('x', 0);
+      t.setAttribute('y', 0);
+      t.textContent = chars;
+      payload.appendChild(t);
+    }
+  }
+
+  // Wave bar animation: pulse heights to suggest live voice.
+  function pulseWave(t01) {
+    const bars = payload.querySelectorAll('[data-bar]');
+    if (!bars.length) return;
+    bars.forEach(function (ln, i) {
+      const phase = t01 * Math.PI * 4 + i * 0.6;
+      const base = [6, 12, 18, 22, 16, 10, 5][i] || 10;
+      const h = base * (0.55 + 0.45 * Math.abs(Math.sin(phase)));
+      ln.setAttribute('y1', -h);
+      ln.setAttribute('y2',  h);
+    });
+  }
+
+  /* ---- Animation loop ----
+     Travel along each arc. Currently supports a uniform per-segment
+     duration. The dialogue turns rotate every full lap.
+  --------------------------------------------------------------- */
+  const TURNS = [
+    { user: "What\u2019s up?",       agent: "Not much."     },
+    { user: "What time is it?", agent: "It\u2019s 2:20 PM." },
+    { user: "How are you?",     agent: "I\u2019m great."    },
+  ];
+
+  // Slower travel so viewers can read the words on the text segments.
+  const TRAVEL_MS = 3200;
+  const DWELL_MS  = 480;
+  const segDur = TRAVEL_MS + DWELL_MS;
+  const lapDur = NODES.length * segDur;
+
+  function lerpAngleCW(a, b, t) {
+    let diff = (b - a + 360) % 360;
+    if (diff === 0) diff = 360;
+    return (a + diff * t) % 360;
+  }
+  function easeInOut(t) {
+    return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2;
+  }
+
+  let lastSegIdx = -1;
+  let lapIdx = 0;
+  let startTime = null;
+
+  function tick(now) {
+    if (startTime === null) startTime = now;
+    const elapsedTotal = now - startTime;
+    const elapsed = elapsedTotal % lapDur;
+    const newLap = Math.floor(elapsedTotal / lapDur);
+    if (newLap !== lapIdx) {
+      lapIdx = newLap;
+      // bump dialogue turn at lap boundary
+      showDialogue(lapIdx % TURNS.length);
+    }
+    const segIdx = Math.floor(elapsed / segDur);
+    const segT   = elapsed - segIdx * segDur;
+    const fromN = NODES[segIdx];
+    const toN   = NODES[(segIdx + 1) % NODES.length];
+
+    // (Re)render payload contents whenever segment changes
+    if (segIdx !== lastSegIdx) {
+      lastSegIdx = segIdx;
+      renderPayload(segIdx, TURNS[lapIdx % TURNS.length]);
+    }
+
+    let angle;
+    let traveling = false;
+    if (segT < TRAVEL_MS) {
+      const t = easeInOut(segT / TRAVEL_MS);
+      angle = lerpAngleCW(fromN.angle, toN.angle, t);
+      traveling = true;
+    } else {
+      angle = toN.angle;
+    }
+
+    const p = pt(angle, R);
+
+    // Tangent rotation so wave/text orient along the direction of travel
+    const rot = angle + 90; // SVG: tangent at angle = angle + 90 for CW
+    payload.setAttribute('transform',
+      'translate(' + p.x + ',' + p.y + ') rotate(' + rot + ')');
+
+    // Dwell scaling: payload puffs up briefly when arriving at a node
+    const dwellT = segT > TRAVEL_MS ? (segT - TRAVEL_MS) / DWELL_MS : 0;
+    const scale = 1 + Math.sin(dwellT * Math.PI) * 0.18;
+    if (dwellT > 0) {
+      payload.setAttribute('transform',
+        'translate(' + p.x + ',' + p.y + ') rotate(' + rot + ') scale(' + scale + ')');
+    }
+
+    // Wave pulses while traveling
+    if (SEGMENTS[segIdx].kind === 'wave') {
+      pulseWave(traveling ? segT / TRAVEL_MS : 1);
+    }
+
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  /* Dialogue ribbon removed — the words now travel along the ring itself. */
+  function showDialogue() { /* no-op */ }
+})();
+</script>
+
+</body>
+</html>
