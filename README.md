@@ -8,15 +8,15 @@ A hands-on tutorial repository for the ODSC 2026 session on real-time voice agen
 
 ### `01-STT-LLM-TTS-Agent.ipynb`
 
-![A circular pipeline with four nodes labelled USER, STT, LLM, and TTS. A single payload travels clockwise around the ring, morphing along the way: a voice waveform from USER to STT, the user's words as text from STT to LLM, the agent's reply text from LLM to TTS, then a voice waveform from TTS back to USER. The center reads "Each hop adds latency"](assets/chained-pipeline.gif)
-
 A chained voice agent on LiveKit Cloud (free tier) that you talk to from an in-notebook widget. Audio flows over WebRTC between the browser and a LiveKit room while the Python kernel joins the same room as the agent worker. The pipeline stitches together Deepgram Nova 3 for speech-to-text, GPT-4.1 mini for reasoning, Cartesia Sonic 3 for text-to-speech, and Silero VAD with a multilingual turn detector for natural turn-taking. Open the notebook in Google Colab and run the cells in order.
+
+![A circular pipeline with four nodes labelled USER, STT, LLM, and TTS. A single payload travels clockwise around the ring, morphing along the way: a voice waveform from USER to STT, the user's words as text from STT to LLM, the agent's reply text from LLM to TTS, then a voice waveform from TTS back to USER. The center reads "Each hop adds latency"](assets/chained-pipeline.gif)
 
 ### `02-Realtime-Voice.ipynb`
 
-![A human silhouette on the left and a hexagonal AI node on the right exchange audio over a single channel, alternating turns with no intermediate STT or TTS step](assets/realtime-architecture.gif)
-
 A two-way live voice chat with OpenAI's `gpt-realtime` model — a single multimodal model that handles speech-in and speech-out without a separate STT or TTS step. The browser captures the microphone and plays the response over WebRTC, while Python keeps the API key and brokers the SDP handshake with OpenAI. The contrast with the first notebook highlights what realtime models change about agent architecture. Open in Google Colab and run the cells in order.
+
+![A human silhouette on the left and a hexagonal AI node on the right exchange audio over a single channel, alternating turns with no intermediate STT or TTS step](assets/realtime-architecture.gif)
 
 ### `03-Realtime-Voice-Local.py`
 
