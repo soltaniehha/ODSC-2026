@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Single Realtime — Animated</title>
+<style>
+  :root {
+    --ink: #0a0a0e;
+    --dim: #5a5a62;
+    --rule: #d4d2cd;
+    --terracotta: #a8410e;
+    --navy: #1a4d8c;
+    --panel: #f0eee7;
+  }
+
+  /* Transparent stage. The host slide provides the background. */
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+  }
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .stage {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* Fixed 1920x1080 canvas — scaled to viewport. Transparent. */
+  .canvas {
+    width: 1920px;
+    height: 1080px;
+    position: relative;
+    transform-origin: center center;
+    flex: none;
+    background: transparent;
+  }
+
+  /* ---- The illustration ---- */
+
+  /* Inner area where the two nodes sit. */
+  .scene {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    justify-items: center;
+  }
+
+  .node {
+    position: relative;
+    width: 360px;
+    height: 360px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* USER: a soft circular avatar — organic, warm. */
+  .user-core {
+    width: 220px;
+    height: 220px;
+    border-radius: 50%;
+    background: #f0eee7;
+    border: 1.5px solid var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3;
+    position: relative;
+  }
+  .user-core svg { display: block; }
+  /* small label tick under the user — a tiny mono caption */
+  .node-label {
+    position: absolute;
+    bottom: -34px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    letter-spacing: 0.28em;
+    color: var(--dim);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid var(--ink);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* AGENT: a faceted hexagonal vessel — geometric, machinic. */
+  .agent {
+    width: 360px;
+    height: 360px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* The hex body. Drawn as inline SVG inside .agent-core for crispness. */
+  .agent-core {
+    width: 240px;
+    height: 240px;
+    position: relative;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: scale(1);
+    transition: transform 200ms ease;
+  }
+  .agent-core svg.hex { position: absolute; inset: 0; }
+  .agent-core svg.glyph { position: relative; z-index: 1; }
+
+  /* Faceted halo: hexagonal outlines, not circles */
+  .agent .halo {
+    position: absolute;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .agent .halo svg { display: block; }
+  .agent .halo.h1 { width: 280px; height: 280px; opacity: 0.55; }
+  .agent .halo.h2 { width: 340px; height: 340px; opacity: 0.30; }
+  .agent .halo.h3 { width: 400px; height: 400px; opacity: 0.15; }
+
+  /* Outgoing pulses from agent (when speaking) — also hexagonal */
+  .agent-pulse {
+    position: absolute;
+    width: 240px;
+    height: 240px;
+    opacity: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .agent-pulse svg { display: block; width: 100%; height: 100%; }
+
+  /* Internal AI glyph rotates slowly (always-on, machine alive) */
+  @keyframes glyphSpin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  .agent-core .glyph .orbit {
+    transform-origin: 50% 50%;
+    animation: glyphSpin 18s linear infinite;
+  }
+  .agent-core .glyph .orbit-rev {
+    transform-origin: 50% 50%;
+    animation: glyphSpin 26s linear infinite reverse;
+  }
+
+  /* ---- Connection between the two nodes (the channel) ---- */
+  .channel-svg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Tone pellets that travel left↔right along the channel.
+     We position them by JS along an x-axis between the two node centers. */
+  .pellet {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--terracotta);
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  /* Subtle floor-line tick marks under each node, like a chart axis */
+  .floor {
+    position: absolute;
+    height: 1px;
+    background: var(--rule);
+  }
+
+  /* ---- Animations ---- */
+
+  /* User breathing: gentle, always-on. */
+  @keyframes userBreath {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.025); }
+  }
+  .user-core { animation: userBreath 4.2s ease-in-out infinite; }
+
+  /* Speaking ring expansion: rings start at user-core size and grow out. */
+  @keyframes ringOut {
+    0%   { transform: scale(0.55); opacity: 0.7; }
+    70%  { opacity: 0.18; }
+    100% { transform: scale(1.35); opacity: 0; }
+  }
+  /* When user-speaking is active, rings animate. Each delayed. */
+  .scene[data-mode="user"] .ring {
+    animation: ringOut 1.6s cubic-bezier(.2,.6,.2,1) infinite;
+  }
+  .scene[data-mode="user"] .ring.r1 { animation-delay: 0s; }
+  .scene[data-mode="user"] .ring.r2 { animation-delay: 0.4s; }
+  .scene[data-mode="user"] .ring.r3 { animation-delay: 0.8s; }
+  .scene[data-mode="user"] .ring.r4 { animation-delay: 1.2s; }
+
+  /* Agent halos: hidden when idle (collapsed). Mirror the user's pattern —
+     they only animate outward when the agent is speaking. */
+  .agent .halo { opacity: 0; }
+
+  @keyframes haloOut {
+    0%   { transform: scale(0.65); opacity: 0.65; }
+    70%  { opacity: 0.18; }
+    100% { transform: scale(1.0);  opacity: 0; }
+  }
+  .scene[data-mode="agent"] .agent .halo {
+    animation: haloOut 1.6s cubic-bezier(.2,.6,.2,1) infinite;
+  }
+  .scene[data-mode="agent"] .agent .halo.h1 { animation-delay: 0s; }
+  .scene[data-mode="agent"] .agent .halo.h2 { animation-delay: 0.4s; }
+  .scene[data-mode="agent"] .agent .halo.h3 { animation-delay: 0.8s; }
+
+  /* Agent pulse expansion when speaking — smaller max radius */
+  @keyframes agentPulse {
+    0%   { transform: scale(0.85); opacity: 0.7; }
+    80%  { opacity: 0.14; }
+    100% { transform: scale(1.45); opacity: 0; }
+  }
+  .scene[data-mode="agent"] .agent-pulse {
+    animation: agentPulse 1.6s cubic-bezier(.2,.6,.2,1) infinite;
+  }
+  .scene[data-mode="agent"] .agent-pulse.p1 { animation-delay: 0s; }
+  .scene[data-mode="agent"] .agent-pulse.p2 { animation-delay: 0.4s; }
+  .scene[data-mode="agent"] .agent-pulse.p3 { animation-delay: 0.8s; }
+  .scene[data-mode="agent"] .agent-pulse.p4 { animation-delay: 1.2s; }
+
+  /* Agent core kicks slightly when speaking */
+  .scene[data-mode="agent"] .agent .agent-core {
+    animation: corePulse 0.6s ease-in-out infinite;
+  }
+  /* Agent label sits below the hex */
+  .agent-label {
+    position: absolute;
+    bottom: -34px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    letter-spacing: 0.28em;
+    color: var(--dim);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  @keyframes corePulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.06); }
+  }
+
+  /* Channel hairline appears with a subtle dash flow during transit */
+  @keyframes dashFlow {
+    to { stroke-dashoffset: -40; }
+  }
+  .channel-line {
+    stroke: var(--ink);
+    stroke-width: 1;
+    fill: none;
+    opacity: 0.35;
+  }
+  .channel-line.flowing {
+    stroke: var(--terracotta);
+    opacity: 0.55;
+    stroke-dasharray: 4 6;
+    animation: dashFlow 1.2s linear infinite;
+  }
+  .scene[data-mode="user"] .channel-line.right-to-left { opacity: 0.2; }
+  .scene[data-mode="agent"] .channel-line.left-to-right { opacity: 0.2; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="canvas" id="canvas">
+
+    <!-- Channel hairline between the two nodes -->
+    <svg class="channel-svg" id="channel" viewBox="0 0 1920 1080" preserveAspectRatio="none">
+      <!-- Two slightly separated parallel hairlines so we can color directions -->
+      <line class="channel-line left-to-right" id="line-lr" x1="640" y1="536" x2="1280" y2="536"/>
+      <line class="channel-line right-to-left" id="line-rl" x1="640" y1="544" x2="1280" y2="544"/>
+    </svg>
+
+    <div class="scene" id="scene" data-mode="idle">
+
+      <!-- USER NODE -->
+      <div class="node user">
+        <!-- Speaking rings (animate when mode=user) -->
+        <div class="ring r1" style="width:220px;height:220px;"></div>
+        <div class="ring r2" style="width:220px;height:220px;"></div>
+        <div class="ring r3" style="width:220px;height:220px;"></div>
+        <div class="ring r4" style="width:220px;height:220px;"></div>
+
+        <div class="user-core">
+          <!-- Simple person silhouette: head + shoulders. Geometric, no faces. -->
+          <svg width="130" height="130" viewBox="0 0 120 120" fill="none" stroke="#0a0a0e" stroke-width="1.8">
+            <circle cx="60" cy="44" r="20"/>
+            <path d="M22 102 Q22 74 60 74 Q98 74 98 102"/>
+          </svg>
+          <div class="node-label">HUMAN</div>
+        </div>
+      </div>
+
+      <!-- AGENT NODE -->
+      <div class="node">
+        <div class="agent">
+          <!-- Outgoing hex pulses (animate when mode=agent) -->
+          <div class="agent-pulse p1">
+            <svg viewBox="0 0 100 100"><polygon points="50,4 92,27 92,73 50,96 8,73 8,27" fill="none" stroke="#a8410e" stroke-width="1"/></svg>
+          </div>
+          <div class="agent-pulse p2">
+            <svg viewBox="0 0 100 100"><polygon points="50,4 92,27 92,73 50,96 8,73 8,27" fill="none" stroke="#a8410e" stroke-width="1"/></svg>
+          </div>
+          <div class="agent-pulse p3">
+            <svg viewBox="0 0 100 100"><polygon points="50,4 92,27 92,73 50,96 8,73 8,27" fill="none" stroke="#a8410e" stroke-width="1"/></svg>
+          </div>
+          <div class="agent-pulse p4">
+            <svg viewBox="0 0 100 100"><polygon points="50,4 92,27 92,73 50,96 8,73 8,27" fill="none" stroke="#a8410e" stroke-width="1"/></svg>
+          </div>
+
+          <!-- Static-ish hex halos (faceted, not circular) -->
+          <div class="halo h3"><svg viewBox="0 0 100 100" width="100%" height="100%"><polygon points="50,4 92,27 92,73 50,96 8,73 8,27" fill="none" stroke="#0a0a0e" stroke-width="0.6"/></svg></div>
+          <div class="halo h2"><svg viewBox="0 0 100 100" width="100%" height="100%"><polygon points="50,4 92,27 92,73 50,96 8,73 8,27" fill="none" stroke="#0a0a0e" stroke-width="0.6"/></svg></div>
+          <div class="halo h1"><svg viewBox="0 0 100 100" width="100%" height="100%"><polygon points="50,4 92,27 92,73 50,96 8,73 8,27" fill="none" stroke="#0a0a0e" stroke-width="0.8"/></svg></div>
+
+          <!-- Hex core with internal AI glyph -->
+          <div class="agent-core">
+            <!-- Filled hex body -->
+            <svg class="hex" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+              <polygon points="50,3 92,26 92,74 50,97 8,74 8,26" fill="#0a0a0e" stroke="#0a0a0e" stroke-width="1"/>
+              <polygon points="50,12 84,30 84,70 50,88 16,70 16,30" fill="none" stroke="#f0eee7" stroke-width="0.4" opacity="0.4"/>
+            </svg>
+            <!-- Internal glyph: orbiting nodes around a center -->
+            <svg class="glyph" width="140" height="140" viewBox="-70 -70 140 140" fill="none" stroke="#f0eee7" stroke-width="1.2">
+              <!-- Center pip -->
+              <circle cx="0" cy="0" r="6" fill="#f0eee7" stroke="none"/>
+              <!-- Outer orbit (slow CW) -->
+              <g class="orbit">
+                <circle cx="0" cy="0" r="42" stroke="#f0eee7" stroke-width="0.6" stroke-dasharray="2 4" opacity="0.55"/>
+                <circle cx="42" cy="0" r="3.5" fill="#f0eee7" stroke="none"/>
+                <circle cx="-21" cy="36.4" r="2.5" fill="#f0eee7" stroke="none"/>
+                <circle cx="-21" cy="-36.4" r="2.5" fill="#f0eee7" stroke="none"/>
+              </g>
+              <!-- Inner orbit (slow CCW) -->
+              <g class="orbit-rev">
+                <circle cx="0" cy="0" r="22" stroke="#f0eee7" stroke-width="0.6" opacity="0.65"/>
+                <circle cx="0" cy="-22" r="2" fill="#f0eee7" stroke="none"/>
+                <circle cx="19" cy="11" r="2" fill="#f0eee7" stroke="none"/>
+                <circle cx="-19" cy="11" r="2" fill="#f0eee7" stroke="none"/>
+              </g>
+            </svg>
+          </div>
+          <div class="agent-label">AI &middot; REALTIME</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Travelling pellets (positioned by JS) -->
+    <div class="pellet" id="pellet1"></div>
+    <div class="pellet" id="pellet2"></div>
+    <div class="pellet" id="pellet3"></div>
+    <div class="pellet" id="pellet4"></div>
+
+  </div>
+</div>
+
+<script>
+  // Scale 1920x1080 canvas to viewport
+  (function () {
+    const canvas = document.getElementById('canvas');
+    function fit() {
+      const sx = window.innerWidth  / 1920;
+      const sy = window.innerHeight / 1080;
+      const s = Math.min(sx, sy);
+      canvas.style.transform = 'scale(' + s + ')';
+    }
+    fit();
+    window.addEventListener('resize', fit);
+  })();
+
+  // ---- Conversation animation ----
+  // The two nodes sit roughly at canvas x=480 (user) and x=1440 (agent),
+  // y=540 (vertical center). Pellets fly between them along that axis.
+  const CANVAS_W = 1920;
+  const USER_X   = 480;   // user-node center X (canvas coords)
+  const AGENT_X  = 1440;  // agent-node center X (canvas coords)
+  const Y_CENTER = 540;
+
+  const scene = document.getElementById('scene');
+  const pellets = [
+    document.getElementById('pellet1'),
+    document.getElementById('pellet2'),
+    document.getElementById('pellet3'),
+    document.getElementById('pellet4'),
+  ];
+
+  function setMode(mode) {
+    scene.setAttribute('data-mode', mode);
+  }
+
+  // Animate a pellet from x=fromX to x=toX over `dur` ms with slight wobble.
+  // direction: 'lr' (user→agent) uses upper hairline y=536; 'rl' uses 544.
+  function flyPellet(el, fromX, toX, dur, direction, color) {
+    const y = direction === 'lr' ? 536 : 544;
+    el.style.background = color;
+    el.style.left = fromX + 'px';
+    el.style.top  = y + 'px';
+    el.style.opacity = 0;
+    // Force layout
+    void el.offsetWidth;
+
+    const start = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - start) / dur);
+      // Ease-in-out
+      const e = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2;
+      const x = fromX + (toX - fromX) * e;
+      // Tiny vertical wobble for "voice" feel
+      const wob = Math.sin(t * Math.PI * 4) * 3 * (1 - Math.abs(2*t - 1));
+      el.style.left = x + 'px';
+      el.style.top  = (y + wob) + 'px';
+      // Fade in early, fade out near end
+      let op = 1;
+      if (t < 0.08) op = t / 0.08;
+      else if (t > 0.92) op = (1 - t) / 0.08;
+      el.style.opacity = op;
+      if (t < 1) requestAnimationFrame(step);
+      else el.style.opacity = 0;
+    }
+    requestAnimationFrame(step);
+  }
+
+  // Mark the channel direction during a phase
+  const lineLR = document.getElementById('line-lr');
+  const lineRL = document.getElementById('line-rl');
+  function flowChannel(direction) {
+    lineLR.classList.remove('flowing');
+    lineRL.classList.remove('flowing');
+    if (direction === 'lr') lineLR.classList.add('flowing');
+    if (direction === 'rl') lineRL.classList.add('flowing');
+  }
+  function clearChannel() {
+    lineLR.classList.remove('flowing');
+    lineRL.classList.remove('flowing');
+  }
+
+  // Conversation script: alternating turns with idle gaps.
+  // Each turn fires a stream of pellets and sets the matching mode.
+  function userTurn() {
+    setMode('user');
+    flowChannel('lr');
+    // 3-4 pellets staggered
+    flyPellet(pellets[0], USER_X + 110, AGENT_X - 130, 1400, 'lr', '#a8410e');
+    setTimeout(() => flyPellet(pellets[1], USER_X + 110, AGENT_X - 130, 1400, 'lr', '#a8410e'), 280);
+    setTimeout(() => flyPellet(pellets[2], USER_X + 110, AGENT_X - 130, 1400, 'lr', '#a8410e'), 560);
+    setTimeout(() => flyPellet(pellets[3], USER_X + 110, AGENT_X - 130, 1400, 'lr', '#a8410e'), 840);
+  }
+  function agentTurn() {
+    setMode('agent');
+    flowChannel('rl');
+    flyPellet(pellets[0], AGENT_X - 130, USER_X + 110, 1400, 'rl', '#0a0a0e');
+    setTimeout(() => flyPellet(pellets[1], AGENT_X - 130, USER_X + 110, 1400, 'rl', '#0a0a0e'), 260);
+    setTimeout(() => flyPellet(pellets[2], AGENT_X - 130, USER_X + 110, 1400, 'rl', '#0a0a0e'), 520);
+    setTimeout(() => flyPellet(pellets[3], AGENT_X - 130, USER_X + 110, 1400, 'rl', '#0a0a0e'), 780);
+  }
+  function idle() {
+    setMode('idle');
+    clearChannel();
+  }
+
+  // Loop: user (2.6s) → idle (0.5s) → agent (3.0s) → idle (0.7s) → repeat
+  function loop() {
+    userTurn();
+    setTimeout(idle,        2600);
+    setTimeout(agentTurn,   3100);
+    setTimeout(idle,        6100);
+    setTimeout(loop,        6900);
+  }
+  loop();
+</script>
+</body>
+</html>

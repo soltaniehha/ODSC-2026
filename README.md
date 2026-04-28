@@ -12,6 +12,8 @@ A chained voice agent on LiveKit Cloud (free tier) that you talk to from an in-n
 
 ### `02-Realtime-Voice.ipynb`
 
+![A human silhouette on the left and a hexagonal AI node on the right exchange audio over a single channel, alternating turns with no intermediate STT or TTS step](assets/realtime-architecture.gif)
+
 A two-way live voice chat with OpenAI's `gpt-realtime` model — a single multimodal model that handles speech-in and speech-out without a separate STT or TTS step. The browser captures the microphone and plays the response over WebRTC, while Python keeps the API key and brokers the SDP handshake with OpenAI. The contrast with the first notebook highlights what realtime models change about agent architecture. Open in Google Colab and run the cells in order.
 
 ### `03-Realtime-Voice-Local.py`
